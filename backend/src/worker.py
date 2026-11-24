@@ -7,14 +7,15 @@ from tempfile import NamedTemporaryFile
 from src.config.settings import ARTIFACTS
 from src.models.database import cache
 from src.services.domain import compute
-from src.services.workflow import claim_run, finish_run, publish_due
+from src.services.workflow import claim_run, finish_run, publish_due, scenario_inputs_for_run
 from src.utils.exports import write_csv
 
 
 def calculate(job):
     key, claim, rows, options = job
     try:
-        report = compute(rows, options)
+        scenarios = scenario_inputs_for_run(key)
+        report = compute(rows, options, scenarios=scenarios)
         report['columns'] = list(dict.fromkeys(key for row in report['rows'] for key in row))
         report['metric_order'] = list(report['metrics'])
         json.dumps(report, allow_nan=False)

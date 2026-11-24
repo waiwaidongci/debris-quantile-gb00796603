@@ -11,9 +11,18 @@ def list_rows(table, fields=None, limit=100):
         return [dict(row) for row in connection.execute(statement.order_by(table.c.id.desc()).limit(limit)).mappings()]
 
 
-def revisions():
+def revisions(kind=None):
     columns = [field for field in datasets.c if field.name != 'records']
-    return list_rows(datasets, columns)
+    statement = select(*columns)
+    if kind:
+        statement = statement.where(datasets.c.kind == kind)
+    return list_rows_from_statement(statement)
+
+
+def list_rows_from_statement(statement, limit=100):
+    with engine.connect() as connection:
+        return [dict(row) for row in connection.execute(
+            statement.order_by(datasets.c.id.desc()).limit(limit)).mappings()]
 
 
 def require_row(table, key, label):

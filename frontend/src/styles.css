@@ -68,3 +68,15 @@ figcaption {font-weight:700;margin-bottom:.55rem}
 @media (max-width:1000px) {.workspace {grid-template-columns:minmax(180px,24%) minmax(0,1fr)} .workspace aside {padding-inline:1rem}}
 @media (max-width:767px) {.workspace {display:block}.workspace aside {position:static;height:auto;padding:1.05rem;gap:.72rem}.workspace aside nav {grid-template-columns:repeat(2,minmax(0,1fr));gap:.14rem}.workspace aside footer {display:flex;align-items:center;justify-content:space-between}.workspace main {padding:1.3rem 1rem 2rem}.login {grid-template-columns:1fr;align-content:center;gap:1rem}.login-context {padding:1rem 0}.page-head {align-items:flex-start}.table-wrap {font-size:.89rem}}
 @media (prefers-reduced-motion:reduce) {* {animation:none!important;transition:none!important}}
+
+/* 班组分派与逐情景覆盖 */
+.team-plan {margin:1rem 0 1.4rem;padding:clamp(1rem,2.4vw,1.6rem);background:var(--surface);border:1px solid var(--rule);border-inline-start:5px solid var(--accent);border-radius:10px}
+.team-plan h2 {margin-top:0}
+.team-plan h3 {margin:1.1rem 0 .5rem;font-size:1rem}
+.team-headline {font-size:1.02rem;line-height:1.7}
+.team-headline.ok {border-inline-start-color:#2e7d32}
+.team-queue {align-items:flex-end}
+.scenario-upload-card {margin:1.2rem 0;padding:1rem 1.2rem;border:1px dashed var(--rule);border-radius:10px}
+.scenario-upload-card h3 {margin:.1rem 0 .4rem}
+.file-label input[type=file] {max-width:100%}
+.panel .table-wrap {margin:.4rem 0 1rem}

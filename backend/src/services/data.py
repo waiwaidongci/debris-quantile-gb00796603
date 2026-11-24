@@ -66,7 +66,17 @@ def csv_records(text):
 
 def parse_options(values):
     fields = PROFILE['options']
-    if set(values) - {field['key'] for field in fields}:
+    reserved = {'work_date', 'job_date', 'day', 'date',
+                'scenario_dataset_id', 'scenario_id', 'scenarios_id',
+                'scenario_revision_id', 'hours_dataset_id',
+                'team_target_pct', 'scenario_target_pct', 'coverage_target_pct',
+                'team_coverage_target_pct', 'scenario_coverage_target_pct',
+                'coverage_target', 'team_coverage_target', 'scenario_coverage_target'}
+    incoming = dict(values or {})
+    # Pinned references live in their own columns; keep them out of numeric option validation.
+    for key in reserved & set(incoming):
+        incoming.pop(key, None)
+    if set(incoming) - {field['key'] for field in fields}:
         raise ValueError('存在未定义的分析参数。')
     output = {}
     for field in fields:
@@ -74,12 +84,15 @@ def parse_options(values):
             output[field['key']] = convert(values.get(field['key'], field['default']), field)
         except (ValueError, TypeError, OverflowError) as error:
             raise ValueError(f"{field['label']} 无效（{error}）。") from error
+    for key in reserved & set(values or {}):
+        output[key] = values[key]
     return output
 
 
-def save_revision(name, records, owner):
+def save_revision(name, records, owner, kind='orders'):
     if not name.strip():
         raise ValueError('数据名称不能为空。')
+    kind = kind if kind in ('orders', 'scenarios') else 'orders'
     payload = json.dumps(records, sort_keys=True, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
     checksum = hashlib.sha256(payload.encode()).hexdigest()
     now = time.time()
@@ -90,7 +103,8 @@ def save_revision(name, records, owner):
             if found is not None:
                 return found, False
             key = connection.execute(insert(datasets).values(name=name.strip(), owner=owner, records=records,
-                                                             checksum=checksum, created=now)).inserted_primary_key[0]
+                                                             checksum=checksum, kind=kind,
+                                                             created=now)).inserted_primary_key[0]
             add_event(connection, owner, 'import', key, now)
             return key, True
     except IntegrityError:

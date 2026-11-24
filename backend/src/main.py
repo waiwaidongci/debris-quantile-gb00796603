@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from scripts.seed_demo import seed
 from src.config.settings import SEED
@@ -13,9 +13,31 @@ from src.models.tables import metadata
 from src.routes.api import router
 
 
+def ensure_columns():
+    """create_all only adds missing tables; backfill columns on older volumes."""
+    wanted = {
+        'data_revisions': {'kind': "VARCHAR(24) NOT NULL DEFAULT 'orders'"},
+        'analysis_runs': {
+            'scenario_dataset_id': 'INTEGER NULL',
+            'work_date': 'VARCHAR(10) NULL',
+        },
+    }
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as connection:
+        for table, columns in wanted.items():
+            if table not in existing_tables:
+                continue
+            present = {column['name'] for column in inspector.get_columns(table)}
+            for name, ddl in columns.items():
+                if name not in present:
+                    connection.execute(text(f'ALTER TABLE {table} ADD COLUMN {name} {ddl}'))
+
+
 @asynccontextmanager
 async def lifespan(app):
     metadata.create_all(engine)
+    ensure_columns()
     if SEED:
         try:
             logging.info('Demo seed: %s', seed())

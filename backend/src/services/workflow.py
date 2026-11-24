@@ -6,19 +6,104 @@ from sqlalchemy import and_, insert, or_, select, update
 from src.constants.enums import State
 from src.models.database import add_event, engine, fetch_one
 from src.models.tables import datasets, deliveries, runs, schedules
-from src.services.data import parse_options
+from src.services.data import parse_options, save_revision
+
+SCENARIO_ID_ALIASES = (
+    'scenario_dataset_id', 'scenario_id', 'scenarios_id', 'scenario_revision_id',
+    'scenarios_dataset_id', 'hours_dataset_id', 'workhour_dataset_id',
+    'work_hours_dataset_id', 'second_dataset_id', 'extra_dataset_id',
+)
+DATE_ALIASES = ('work_date', 'job_date', 'operation_date', 'day', 'date', '作业日')
+PRIMARY_ID_ALIASES = (
+    'dataset_id', 'order_dataset_id', 'orders_dataset_id', 'primary_dataset_id',
+    'ledger_dataset_id', 'data_id', 'revision_id',
+)
+
+
+def _extra(body):
+    return getattr(body, 'model_extra', None) or {}
+
+
+def _resolve_primary_id(body, raw_options):
+    for field in PRIMARY_ID_ALIASES:
+        value = getattr(body, field, None)
+        if value is None:
+            value = _extra(body).get(field)
+        if value is None and isinstance(raw_options, dict):
+            value = raw_options.get(field)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                raise HTTPException(422, '工单数据版本编号无效。')
+    return None
+
+
+def _resolve_scenario_id(body, options):
+    for field in SCENARIO_ID_ALIASES:
+        value = getattr(body, field, None)
+        if value is None:
+            value = _extra(body).get(field)
+        if value is None and isinstance(options, dict):
+            value = options.get(field)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                raise HTTPException(422, '情景工时数据版本编号无效。')
+    return None
+
+
+def _resolve_work_date(body, raw_options):
+    for field in DATE_ALIASES:
+        value = getattr(body, field, None)
+        if value is None:
+            value = _extra(body).get(field)
+        if value is None and isinstance(raw_options, dict):
+            value = raw_options.get(field)
+        if value not in (None, ''):
+            return str(value)[:10]
+    return None
 
 
 def add_run(body, actor):
-    options = parse_options(body.options)
+    raw_options = dict(body.options or {})
+    options = parse_options(raw_options)
+    primary_id = _resolve_primary_id(body, raw_options)
+    if primary_id is None:
+        raise HTTPException(422, '请选择工单数据版本 dataset_id。')
+    work_date = _resolve_work_date(body, raw_options)
+    if work_date:
+        options['work_date'] = work_date
+
+    inline_scenarios = getattr(body, 'scenarios', None)
+    scenario_id = _resolve_scenario_id(body, raw_options)
+    if inline_scenarios is not None and scenario_id is None:
+        from src.services.domain import normalize_scenarios, to_long_scenario_records
+        records = to_long_scenario_records(normalize_scenarios(inline_scenarios))
+        scenario_id, _created = save_revision('逐情景工时（随分析登记）', records, actor, 'scenarios')
     now = time.time()
     with engine.begin() as connection:
-        if fetch_one(connection, datasets, body.dataset_id) is None:
+        if fetch_one(connection, datasets, primary_id) is None:
             raise HTTPException(404, '数据版本不存在。')
-        key = connection.execute(insert(runs).values(dataset_id=body.dataset_id, options=options,
-                    state=State.queued.value, owner=actor, created=now)).inserted_primary_key[0]
+        if scenario_id is not None and fetch_one(connection, datasets, scenario_id) is None:
+            raise HTTPException(404, '逐情景工时数据版本不存在，请先补传。')
+        key = connection.execute(insert(runs).values(
+            dataset_id=primary_id, scenario_dataset_id=scenario_id, work_date=work_date,
+            options=options, state=State.queued.value, owner=actor, created=now)).inserted_primary_key[0]
         add_event(connection, actor, 'queue', key, now)
-    return {'id': key, 'state': State.queued.value}
+    return {'id': key, 'state': State.queued.value, 'dataset_id': primary_id,
+            'scenario_dataset_id': scenario_id, 'work_date': work_date}
+
+
+def scenario_inputs_for_run(key):
+    """Reload the pinned second revision for a run (used after interruption/recovery)."""
+    with engine.connect() as connection:
+        run = fetch_one(connection, runs, key)
+        if run is None or not run['scenario_dataset_id']:
+            return None
+        dataset = fetch_one(connection, datasets, run['scenario_dataset_id'])
+        return dataset['records'] if dataset is not None else None
 
 
 def claim_run():

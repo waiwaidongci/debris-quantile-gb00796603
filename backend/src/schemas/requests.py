@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Login(BaseModel):
@@ -10,13 +10,30 @@ class Login(BaseModel):
 
 
 class Import(BaseModel):
+    model_config = ConfigDict(extra='allow')
+
     name: str = Field(min_length=1, max_length=180)
-    csv: str = Field(min_length=1, max_length=1_000_000)
+    csv: str | None = Field(default=None, max_length=1_000_000)
+    rows: list[dict[str, Any]] | None = None
+    kind: Literal['orders', 'scenarios'] | None = None
+
+
+class ScenarioImport(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    csv: str | None = Field(default=None, max_length=1_000_000)
+    rows: Any = None
+    work_date: str | None = Field(default=None, max_length=10)
+    dataset_id: int | None = Field(default=None, gt=0)
 
 
 class Run(BaseModel):
-    dataset_id: int = Field(gt=0)
+    model_config = ConfigDict(extra='allow')
+
+    dataset_id: int | None = Field(default=None, gt=0)
     options: dict = Field(default_factory=dict)
+    scenario_dataset_id: int | None = Field(default=None, gt=0)
+    work_date: str | None = Field(default=None, max_length=10)
+    scenarios: Any = None
 
 
 class Review(BaseModel):
